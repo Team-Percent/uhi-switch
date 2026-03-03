@@ -8,16 +8,19 @@ Core principles:
 4. IMMUTABLE AUDIT — Every action is hash-chained and tamper-evident
 """
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
+import asyncio
+import httpx
+import logging
 
 import models
-from database import engine, get_db
+from database import engine, get_db, SessionLocal
 from crypto_utils import (
     generate_bundle_key,
     encrypt_bundle,
@@ -27,6 +30,10 @@ from crypto_utils import (
     verify_hash_chain,
 )
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
@@ -35,6 +42,52 @@ app = FastAPI(
     description="Unified Health Interface — Consent-gated FHIR routing with zero data storage",
     version="1.0.0",
 )
+
+# ─── Background Monitor ────────────────────────────
+
+async def monitor_hospitals():
+    """Background task to maintain consistent connection with hospitals."""
+    logger.info("Starting UHI Hospital Monitor...")
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        while True:
+            db = SessionLocal()
+            try:
+                hospitals = db.query(models.Hospital).all()
+                for hospital in hospitals:
+                    try:
+                        # Check hospital health endpoint
+                        health_url = f"{hospital.endpoint_url.rstrip('/')}/api/care_medgemma/health"
+                        response = await client.get(health_url)
+                        
+                        if response.status_code == 200:
+                            hospital.last_heartbeat = datetime.now(timezone.utc)
+                            hospital.status_message = "HEALTHY"
+                            if not hospital.is_active:
+                                hospital.is_active = True
+                                logger.info(f"RECOVERY: Hospital {hospital.name} ({hospital.hospital_id}) is BACK ONLINE.")
+                                logger.info(f"NOTIFICATION: [ADMIN] Recovery alert sent for {hospital.name}")
+                        else:
+                            hospital.is_active = False
+                            hospital.status_message = f"UNHEALTHY: HTTP {response.status_code}"
+                            logger.error(f"ALERT: Hospital {hospital.name} ({hospital.hospital_id}) is UNHEALTHY!")
+                            logger.info(f"NOTIFICATION: [ADMIN] Unhealthy alert sent for {hospital.name}")
+                    except Exception as e:
+                        hospital.is_active = False
+                        hospital.status_message = f"OUTAGE: {str(e)}"
+                        logger.error(f"CRITICAL: Hospital {hospital.name} ({hospital.hospital_id}) connection LOST! Error: {str(e)}")
+                        logger.info(f"NOTIFICATION: [ADMIN] CRITICAL outage alert sent for {hospital.name}")
+                
+                db.commit()
+            except Exception as e:
+                logger.error(f"Monitor loop error: {str(e)}")
+            finally:
+                db.close()
+            
+            await asyncio.sleep(30) # Check every 30 seconds
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(monitor_hospitals())
 
 app.add_middleware(
     CORSMiddleware,

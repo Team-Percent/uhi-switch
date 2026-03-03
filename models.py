@@ -18,6 +18,8 @@ class Hospital(Base):
     state = Column(String, nullable=True)
     registered_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     is_active = Column(Boolean, default=True)
+    last_heartbeat = Column(DateTime, nullable=True)
+    status_message = Column(String, nullable=True)
 
 
 class ConsentArtifact(Base):
