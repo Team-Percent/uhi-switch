@@ -899,3 +899,116 @@ def app_patient_summary(abha_id: str, db: Session = Depends(get_db)):
         "message": "Your health data is encrypted and only accessible with your consent.",
     }
 
+
+# ─── Patient Records (Direct Access — Patient's Own Data) ────────────
+
+from patient_data_hospital_a import (
+    HOSPITAL_A_ID, HOSPITAL_A_NAME, DEVAGANESH_PATIENT as PATIENT_A,
+    MONTHLY_PROGRESS, IMAGING_REPORTS_HOSPITAL_A, BASELINE_VITALS, FINAL_VITALS,
+)
+from patient_data_hospital_b import (
+    HOSPITAL_B_ID, HOSPITAL_B_NAME, DEVAGANESH_PATIENT as PATIENT_B,
+    IMAGING_REPORTS_HOSPITAL_B, BASELINE_XRAY_IMAGE,
+)
+
+
+@app.get("/app/patient/{abha_id}/records")
+def app_patient_records(abha_id: str):
+    """
+    Mobile App: Get ALL clinical records for a patient.
+    The patient can ALWAYS access their own data — no consent required.
+    Returns structured records from all hospitals.
+    """
+    if abha_id != "91-1234-5678-9012":
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    # Build progress records (Hospital A — 10 months)
+    progress_records = []
+    for p in MONTHLY_PROGRESS:
+        record = {
+            "month": p["month"],
+            "source_hospital": HOSPITAL_A_NAME,
+            "source_hospital_id": HOSPITAL_A_ID,
+            "type": "progress_report",
+            "blood_pressure": p["bp"],
+            "weight_kg": p["weight_kg"],
+            "bmi": p["bmi"],
+            "resting_heart_rate": p["resting_hr"],
+            "total_cholesterol": p["total_cholesterol"],
+            "triglycerides": p["triglycerides"],
+            "hdl": p["hdl"],
+            "medication": p["medication"],
+            "exercise": p["exercise"],
+            "assessment": p["assessment"],
+        }
+        progress_records.append(record)
+
+    # Build imaging records (Hospital A — months 1-2)
+    imaging_records = []
+    for img in IMAGING_REPORTS_HOSPITAL_A:
+        imaging_records.append({
+            "month": img["month"],
+            "source_hospital": HOSPITAL_A_NAME,
+            "source_hospital_id": HOSPITAL_A_ID,
+            "type": img["type"],
+            "technique": img["technique"],
+            "findings": img["findings"],
+            "impression": img["impression"],
+            "radiologist": img["radiologist"],
+            "comparison": img.get("comparison"),
+        })
+
+    # Build imaging records (Hospital B — months 3-8)
+    for img in IMAGING_REPORTS_HOSPITAL_B:
+        imaging_records.append({
+            "month": img["month"],
+            "source_hospital": HOSPITAL_B_NAME,
+            "source_hospital_id": HOSPITAL_B_ID,
+            "type": img["type"],
+            "technique": img["technique"],
+            "findings": img["findings"],
+            "impression": img["impression"],
+            "radiologist": img["radiologist"],
+            "comparison": img.get("comparison"),
+        })
+
+    # Baseline X-ray image analysis (Hospital B)
+    baseline_xray = {
+        "source_hospital": HOSPITAL_B_NAME,
+        "source_hospital_id": HOSPITAL_B_ID,
+        "type": "chest_xray_image_analysis",
+        "clinical_indication": BASELINE_XRAY_IMAGE["clinical_indication"],
+        "technique": BASELINE_XRAY_IMAGE["technique"],
+        "findings": BASELINE_XRAY_IMAGE["findings"],
+        "impression": BASELINE_XRAY_IMAGE["impression"],
+        "ctr_baseline": BASELINE_XRAY_IMAGE["ctr_baseline"],
+        "ctr_month5": BASELINE_XRAY_IMAGE["ctr_month5"],
+        "ctr_month7": BASELINE_XRAY_IMAGE["ctr_month7"],
+    }
+
+    return {
+        "patient_abha_id": abha_id,
+        "patient": {
+            "name": PATIENT_A["name"],
+            "age": PATIENT_A["age"],
+            "gender": PATIENT_A["gender"],
+            "blood_group": PATIENT_A["blood_group"],
+            "primary_diagnosis": PATIENT_A["primary_diagnosis"],
+            "treatment_started": PATIENT_A["treatment_started"],
+            "treatment_type": PATIENT_A["treatment_type"],
+            "referring_physician": PATIENT_A["referring_physician"],
+        },
+        "hospitals": [
+            {"id": HOSPITAL_A_ID, "name": HOSPITAL_A_NAME,
+             "role": "Primary Care — Internal Medicine"},
+            {"id": HOSPITAL_B_ID, "name": HOSPITAL_B_NAME,
+             "role": "Radiology & Diagnostics (Referral)"},
+        ],
+        "baseline_vitals": BASELINE_VITALS,
+        "final_vitals": FINAL_VITALS,
+        "progress_records": progress_records,
+        "imaging_records": imaging_records,
+        "baseline_xray_analysis": baseline_xray,
+        "total_records": len(progress_records) + len(imaging_records) + 1,
+    }
+
