@@ -67,12 +67,12 @@ async def monitor_hospitals():
                                 logger.info(f"RECOVERY: Hospital {hospital.name} ({hospital.hospital_id}) is BACK ONLINE.")
                                 logger.info(f"NOTIFICATION: [ADMIN] Recovery alert sent for {hospital.name}")
                         else:
-                            hospital.is_active = False
+                            # hospital.is_active = False # Patched for local testing
                             hospital.status_message = f"UNHEALTHY: HTTP {response.status_code}"
                             logger.error(f"ALERT: Hospital {hospital.name} ({hospital.hospital_id}) is UNHEALTHY!")
                             logger.info(f"NOTIFICATION: [ADMIN] Unhealthy alert sent for {hospital.name}")
                     except Exception as e:
-                        hospital.is_active = False
+                        # hospital.is_active = False # Patched for local testing
                         hospital.status_message = f"OUTAGE: {str(e)}"
                         logger.error(f"CRITICAL: Hospital {hospital.name} ({hospital.hospital_id}) connection LOST! Error: {str(e)}")
                         logger.info(f"NOTIFICATION: [ADMIN] CRITICAL outage alert sent for {hospital.name}")
