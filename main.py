@@ -297,7 +297,7 @@ def verify_consent(consent_token: str, db: Session = Depends(get_db)):
         return {"valid": False, "reason": "Token not found"}
     if consent.status != "GRANTED":
         return {"valid": False, "reason": f"Consent is {consent.status}"}
-    if consent.expires_at < datetime.utcnow():
+    if consent.expires_at < datetime.now(timezone.utc):
         consent.status = "EXPIRED"
         db.commit()
         return {"valid": False, "reason": "Consent has expired"}
@@ -379,7 +379,7 @@ def request_bundle(req: BundleRequestRequest, db: Session = Depends(get_db)):
     if not consent:
         raise HTTPException(status_code=403, detail="Invalid or expired consent token")
 
-    if consent.expires_at < datetime.utcnow():
+    if consent.expires_at < datetime.now(timezone.utc):
         consent.status = "EXPIRED"
         db.commit()
         raise HTTPException(status_code=403, detail="Consent has expired")
@@ -387,7 +387,7 @@ def request_bundle(req: BundleRequestRequest, db: Session = Depends(get_db)):
     # 2. Find bundle references for patient
     bundle_refs = db.query(models.EncryptedBundleRef).filter(
         models.EncryptedBundleRef.patient_abha_id == req.patient_abha_id,
-        models.EncryptedBundleRef.expires_at > datetime.utcnow(),
+        models.EncryptedBundleRef.expires_at > datetime.now(timezone.utc),
     ).all()
 
     if not bundle_refs:
@@ -645,7 +645,7 @@ def upload_to_storage(req: StorageUploadRequest, db: Session = Depends(get_db)):
         resource_count=req.resource_count,
         resource_types=req.resource_types,
         presigned_token=presigned_token,
-        expires_at=datetime.utcnow() + timedelta(hours=req.expires_in_hours),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=req.expires_in_hours),
         max_access_count=req.max_downloads,
     )
     db.add(bucket)
@@ -659,7 +659,7 @@ def upload_to_storage(req: StorageUploadRequest, db: Session = Depends(get_db)):
         bundle_location=f"/storage/download?token={presigned_token}",
         resource_count=req.resource_count,
         resource_types=req.resource_types,
-        expires_at=datetime.utcnow() + timedelta(hours=req.expires_in_hours),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=req.expires_in_hours),
     )
     db.add(ref)
 
@@ -700,7 +700,7 @@ def download_from_storage(token: str, db: Session = Depends(get_db)):
     if not bucket:
         raise HTTPException(status_code=404, detail="Bucket not found or deleted")
 
-    if bucket.expires_at < datetime.utcnow():
+    if bucket.expires_at < datetime.now(timezone.utc):
         bucket.is_deleted = True
         db.commit()
         raise HTTPException(status_code=410, detail="Bucket expired — data has been auto-deleted")
@@ -761,7 +761,7 @@ def cleanup_expired_buckets(db: Session = Depends(get_db)):
     In production: Lambda/cron job with S3 lifecycle policies.
     """
     expired = db.query(models.StorageBucket).filter(
-        models.StorageBucket.expires_at < datetime.utcnow(),
+        models.StorageBucket.expires_at < datetime.now(timezone.utc),
         models.StorageBucket.is_deleted == False,
     ).all()
 
@@ -801,7 +801,7 @@ def app_patient_bundles(abha_id: str, db: Session = Depends(get_db)):
     """
     bundles = db.query(models.EncryptedBundleRef).filter(
         models.EncryptedBundleRef.patient_abha_id == abha_id,
-        models.EncryptedBundleRef.expires_at > datetime.utcnow(),
+        models.EncryptedBundleRef.expires_at > datetime.now(timezone.utc),
     ).all()
 
     return {
@@ -826,7 +826,7 @@ def app_grant_consent(req: AppConsentGrantRequest, db: Session = Depends(get_db)
     """
     consent_id = str(uuid.uuid4())
     token = generate_consent_token()
-    expires_at = datetime.utcnow() + timedelta(hours=req.valid_hours)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=req.valid_hours)
 
     consent = models.ConsentArtifact(
         consent_id=consent_id,
@@ -837,7 +837,7 @@ def app_grant_consent(req: AppConsentGrantRequest, db: Session = Depends(get_db)
         status="GRANTED",
         purpose=req.purpose,
         permissions=req.permissions,
-        granted_at=datetime.utcnow(),
+        granted_at=datetime.now(timezone.utc),
         expires_at=expires_at,
     )
     db.add(consent)
@@ -898,7 +898,7 @@ def app_revoke_consent(consent_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=f"Consent already {consent.status}")
 
     consent.status = "REVOKED"
-    consent.revoked_at = datetime.utcnow()
+    consent.revoked_at = datetime.now(timezone.utc)
     append_audit(db, consent.patient_abha_id, "APP_CONSENT_REVOKE",
                  f"ConsentArtifact/{consent_id}",
                  consent_id=consent_id,
